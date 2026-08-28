@@ -2,7 +2,8 @@
 
 A small, beginner-friendly **To-Do List REST API** built with **FastAPI**.
 It demonstrates a complete **CRUD** (Create, Read, Update, Delete) workflow
-using an **in-memory** Python list as the data store — no database required.
+using **SQLite** for persistent storage, organised into a clean
+**modular package** layout.
 
 ---
 
@@ -12,15 +13,18 @@ This project is a simple Task Management API that lets you create, view,
 update, and delete tasks over HTTP. It is designed as a learning project
 to understand how FastAPI works with:
 
+- A modular project layout (a dedicated `app/` package)
+- SQLite as a lightweight, file-based database (`tasks.db`)
+- Separation of concerns across `main`, `crud`, `database`, and `schemas`
 - Path and query parameters
 - Request and response bodies
 - Pydantic data validation
 - HTTP status codes (`200`, `201`, `204`, `400`, `404`)
 - Auto-generated interactive API documentation (Swagger UI)
 
-The data is stored in a **Python list in memory**, so it resets every time
-the server restarts. This keeps the project simple and focused on the API
-layer.
+The data is stored in a local **SQLite** file (`tasks.db`), so it
+**persists between server restarts**. This keeps the project simple
+while still teaching real database usage instead of an in-memory list.
 
 ---
 
@@ -31,23 +35,25 @@ layer.
 - Get a single task by ID
 - Update a task's title and/or `done` status
 - Delete a task by ID
-- Automatic generation of unique task IDs
+- Automatic generation of unique task IDs (SQLite `AUTOINCREMENT`)
 - `done` defaults to `false` when a task is created
+- Auto-seeds the database with 3 sample tasks on first run
 - Returns **404** when a task does not exist
 - Returns **400** when the title is empty or only whitespace
 - Auto-generated Swagger UI and OpenAPI schema
-- CORS-free, database-free, authentication-free — pure FastAPI
+- Modular code: `main.py`, `crud.py`, `database.py`, `schemas.py`
 
 ---
 
 ## Technologies Used
 
-| Technology  | Purpose                                      |
-| ----------- | -------------------------------------------- |
-| Python      | Programming language                         |
-| FastAPI     | Web framework for building the API           |
-| Uvicorn     | ASGI server used to run the FastAPI app      |
-| Pydantic    | Request/response data validation             |
+| Technology  | Purpose                                              |
+| ----------- | ---------------------------------------------------- |
+| Python      | Programming language                                 |
+| FastAPI     | Web framework for building the API                   |
+| Uvicorn     | ASGI server used to run the FastAPI app              |
+| Pydantic    | Request/response data validation                     |
+| SQLite      | File-based relational database (built into Python)   |
 
 ---
 
@@ -55,16 +61,41 @@ layer.
 
 ```
 Curd Fastapis/
-├── main.py            # FastAPI application and all endpoints
-├── requirements.txt   # Python dependencies
-├── README.md          # Project documentation
-├── .gitignore         # Files/folders excluded from Git
-├── Swagger.png        # Screenshot of the Swagger UI
-└── env/               # Local virtual environment (NOT uploaded to GitHub)
+├── app/
+│   ├── __init__.py        # Marks `app` as a Python package
+│   ├── main.py            # FastAPI app + endpoint definitions
+│   ├── crud.py            # All database CRUD operations
+│   ├── database.py        # SQLite connection + table initialisation
+│   └── schemas.py         # Pydantic models (TaskCreate, TaskUpdate)
+├── requirements.txt       # Python dependencies
+├── README.md              # Project documentation
+├── Swagger.png            # Screenshot of the Swagger UI
+├── tasks.db               # SQLite database file (auto-created on first run)
+└── env/                   # Local virtual environment (NOT uploaded to GitHub)
 ```
 
-> The `env/` folder and `__pycache__/` are listed in `.gitignore`, so they
-> are **never** pushed to GitHub.
+> The `env/` folder, `__pycache__/`, and `tasks.db` (optional) are
+> handled in `.gitignore` so they are **never** pushed to GitHub.
+
+---
+
+## How the Code Is Organised
+
+The application is split into four small modules inside `app/`:
+
+- **`app/main.py`** — Creates the `FastAPI` instance, calls
+  `initialize_database()` on startup, and defines all HTTP endpoints
+  (`/`, `/health`, `/tasks`, `/tasks/{id}`).
+- **`app/crud.py`** — Contains all database operations
+  (`get_all_tasks`, `get_task_by_id`, `create_task`, `update_task`,
+  `delete_task`). Each function opens its own connection, runs the
+  query, and closes the connection.
+- **`app/database.py`** — Sets the database name (`tasks.db`),
+  provides a `get_connection()` helper, and creates the `tasks`
+  table on startup. Seeds 3 sample tasks if the table is empty.
+- **`app/schemas.py`** — Defines the Pydantic models used for
+  request validation: `TaskCreate` (with `min_length=1`) and
+  `TaskUpdate` (both fields optional for partial updates).
 
 ---
 
@@ -73,6 +104,9 @@ Curd Fastapis/
 - **Python 3.9+** (recommended: 3.10 or newer)
 - **pip** (Python package manager)
 - A terminal (PowerShell, Command Prompt, or bash)
+
+> `sqlite3` is part of the Python standard library, so no extra
+> database driver is required.
 
 ---
 
@@ -135,7 +169,7 @@ This will install:
 From the project root (with the virtual environment activated), run:
 
 ```bash
-uvicorn main:app --reload
+uvicorn app.main:app --reload
 ```
 
 You should see output similar to:
@@ -148,6 +182,15 @@ INFO:     Application startup complete.
 ```
 
 The `--reload` flag enables auto-reload on code changes (development only).
+
+> The app module path is `app.main` (not just `main`) because the
+> FastAPI instance now lives inside the `app/` package.
+
+On first start, the app will:
+
+1. Create a `tasks.db` SQLite file in the project root (if it does not exist).
+2. Create the `tasks` table if it is missing.
+3. Insert 3 sample tasks if the table is empty.
 
 ---
 
@@ -189,14 +232,14 @@ This is useful for generating client libraries or importing into tools like Post
 
 ## API Endpoints
 
-| Method | Endpoint        | Description                              | Success Status |
-| ------ | --------------- | ---------------------------------------- | -------------- |
-| GET    | `/`             | API info and available endpoints         | `200 OK`       |
-| GET    | `/health`       | Health check                             | `200 OK`       |
-| GET    | `/tasks`        | Get the list of all tasks                | `200 OK`       |
-| GET    | `/tasks/{id}`   | Get a single task by ID                  | `200 OK`       |
-| POST   | `/tasks`        | Create a new task                        | `201 Created`  |
-| PUT    | `/tasks/{id}`   | Update a task's title and/or `done`      | `200 OK`       |
+| Method | Endpoint        | Description                              | Success Status   |
+| ------ | --------------- | ---------------------------------------- | ---------------- |
+| GET    | `/`             | API info and available endpoints         | `200 OK`         |
+| GET    | `/health`       | Health check                             | `200 OK`         |
+| GET    | `/tasks`        | Get the list of all tasks                | `200 OK`         |
+| GET    | `/tasks/{id}`   | Get a single task by ID                  | `200 OK`         |
+| POST   | `/tasks`        | Create a new task                        | `201 Created`    |
+| PUT    | `/tasks/{id}`   | Update a task's title and/or `done`      | `200 OK`         |
 | DELETE | `/tasks/{id}`   | Delete a task by ID                      | `204 No Content` |
 
 ### Task Object Schema
@@ -211,7 +254,7 @@ This is useful for generating client libraries or importing into tools like Post
 
 | Field  | Type    | Required | Description                                  |
 | ------ | ------- | -------- | -------------------------------------------- |
-| `id`   | integer | auto     | Auto-generated unique task ID                |
+| `id`   | integer | auto     | Auto-generated unique task ID (SQLite)       |
 | `title`| string  | yes      | Task title (must not be empty)               |
 | `done` | boolean | no       | Completion status, defaults to `false`       |
 
@@ -293,7 +336,8 @@ This is useful for generating client libraries or importing into tools like Post
 }
 ```
 
-> The `id` is generated automatically, and `done` defaults to `false`.
+> The `id` is generated automatically by SQLite (`AUTOINCREMENT`),
+> and `done` defaults to `false` (`0` in the database).
 
 ---
 
@@ -458,16 +502,25 @@ curl -i -X PUT http://127.0.0.1:8000/tasks/1 \
 
 ## Data Storage Notice
 
-This API uses a **plain Python list (`tasks`)** stored in memory as its
-temporary data store. There is **no database**.
+This API uses a local **SQLite** database file (`tasks.db`) as its
+data store. The `tasks` table is created automatically the first
+time the server starts.
 
-Because of this:
+The table schema is:
 
-- All data is **lost when the server stops or restarts**.
-- Restarting with `uvicorn main:app --reload` after a code change keeps
-  data only if no Python process is killed; in practice, treat the data
-  as ephemeral.
-- This is intentional — the project focuses on the API layer, not persistence.
+| Column | Type    | Notes                                  |
+| ------ | ------- | -------------------------------------- |
+| `id`   | INTEGER | Primary key, `AUTOINCREMENT`           |
+| `title`| TEXT    | `NOT NULL` — task title                |
+| `done` | INTEGER | `NOT NULL DEFAULT 0` — `0` or `1`      |
+
+Because data is stored in `tasks.db`:
+
+- All data **persists between server restarts**.
+- To reset the database, stop the server and delete `tasks.db` —
+  the next run will recreate the table and re-seed the 3 sample tasks.
+- This is intentional — the project uses a real database, but keeps
+  the setup as simple as possible (no external server needed).
 
 ---
 
@@ -490,6 +543,7 @@ ensures that the following are **not** uploaded:
 - `__pycache__/` — Python cache folders
 - `*.pyc` — compiled Python files
 - `.vscode/` — editor settings (optional)
+- `tasks.db` — local SQLite database (optional, depends on your `.gitignore`)
 
 Before pushing, verify:
 
@@ -522,11 +576,14 @@ python -m venv env
 # 5. Install dependencies
 pip install -r requirements.txt
 
-# 6. Run the server
-uvicorn main:app --reload
+# 6. Run the server (note: app.main, not just main)
+uvicorn app.main:app --reload
 ```
 
 Open `http://127.0.0.1:8000/docs` in a browser to explore the API.
+
+On the first run, `tasks.db` is created automatically and pre-filled
+with 3 sample tasks.
 
 ---
 
@@ -569,7 +626,14 @@ print(requests.get(f"{BASE}/tasks").json())
 By building and studying this project, you will learn how to:
 
 - Set up a **FastAPI** project from scratch
+- Organise a FastAPI app into a **modular package** (`app/`)
+- Use **relative imports** between modules inside a package
+- Run the app as a module with `uvicorn app.main:app`
+- Use **SQLite** as a file-based database from Python's standard library
+- Create tables with `CREATE TABLE IF NOT EXISTS` and seed initial data
 - Define **GET, POST, PUT, DELETE** endpoints
+- Split logic into layers: routes (`main.py`), business logic (`crud.py`),
+  persistence (`database.py`), and validation (`schemas.py`)
 - Use **Pydantic models** (`BaseModel`, `Field`) for input validation
 - Use `Field(min_length=1)` to enforce non-empty string fields
 - Use `Optional` fields with `None` defaults for partial updates (`PUT`)
